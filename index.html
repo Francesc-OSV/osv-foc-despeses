@@ -132,6 +132,12 @@ tr:hover td{background:#f3f2f1}
     <div class="filter-bar">
       <i class="ti ti-search" style="font-size:14px;color:#605e5c"></i>
       <input type="text" id="filterText" placeholder="Cercar..." style="width:160px" oninput="renderTaula()">
+      <select id="filterEmpresa" onchange="renderTaula()" style="width:80px">
+        <option value="">Totes</option>
+        <option value="OSV">OSV</option>
+        <option value="FOC">FOC</option>
+        <option value="GS">GS</option>
+      </select>
       <select id="filterCat" onchange="renderTaula()">
         <option value="">Totes les categories</option>
         <option value="Viatge">Viatge</option>
@@ -168,6 +174,21 @@ tr:hover td{background:#f3f2f1}
         <div class="form-group">
           <label>Data de la despesa</label>
           <input type="date" id="fData">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="fEmpresa">Empresa</label>
+          <select id="fEmpresa">
+            <option value="">Selecciona...</option>
+            <option value="OSV">OSV</option>
+            <option value="FOC">FOC</option>
+            <option value="GS">GS</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="fProjecte">Projecte</label>
+          <input type="text" id="fProjecte" placeholder="Ex: Elisir-La Farandula">
         </div>
       </div>
       <div class="form-row">
@@ -273,6 +294,8 @@ var CAT_TEXT = {
 
 var despeses = [];
 var tabActual = 'totes';
+var paginaActual = 1;
+var ITEMS_PAG = 20;
 var editId = null;
 var fitxerPujar = null;
 
@@ -314,6 +337,14 @@ function getTiquetUrl(nom){
 
 
 
+function canviPagina(p){
+  var list=getFiltered();
+  var totalPag=Math.max(1,Math.ceil(list.length/ITEMS_PAG));
+  if(p<1||p>totalPag)return;
+  paginaActual=p;
+  renderTaula();
+}
+
 function carregarDades(){
   document.getElementById('taulaWrap').innerHTML='<div class="loading">Carregant despeses...</div>';
   sbGet().then(function(raw){
@@ -346,11 +377,13 @@ function getFiltered(){
   var tab=tabActual;
   var text=(document.getElementById('filterText').value||'').toLowerCase();
   var cat=document.getElementById('filterCat').value;
+  var emp=document.getElementById('filterEmpresa').value;
   var usr=document.getElementById('filterUsuari').value;
   var mes=document.getElementById('filterMes').value;
   return despeses.filter(function(e){
     if(tab!=='totes'&&(e.estat||'').toLowerCase()!==tab)return false;
     if(text&&!(e.usuari||'').toLowerCase().includes(text)&&!(e.descripcio||'').toLowerCase().includes(text))return false;
+    if(emp&&e.empresa!==emp)return false;
     if(cat&&e.categoria!==cat)return false;
     if(usr&&e.usuari!==usr)return false;
     if(mes&&!(e.data||'').startsWith(mes))return false;
@@ -375,9 +408,15 @@ function renderTaula(){
   var list=getFiltered();
   document.getElementById('filterCount').textContent=list.length+' despesa'+(list.length!==1?'es':'');
   var wrap=document.getElementById('taulaWrap');
+  var total=list.length;
+  var totalPag=Math.max(1,Math.ceil(total/ITEMS_PAG));
+  if(paginaActual>totalPag)paginaActual=1;
+  var inici=(paginaActual-1)*ITEMS_PAG;
+  var listPag=list.slice(inici,inici+ITEMS_PAG);
+  document.getElementById('filterCount').textContent=total+' despesa'+(total!==1?'es':'')+' · p.'+paginaActual+'/'+totalPag;
   if(!list.length){wrap.innerHTML='<div class="empty"><i class="ti ti-receipt-off"></i>Cap despesa trobada</div>';return;}
-  var html='<table><thead><tr><th>Data</th><th>Descripció</th><th>Categoria</th><th>Usuari</th><th style="text-align:right">Import</th><th>Estat</th><th>Assentament</th><th></th></tr></thead><tbody>';
-  list.forEach(function(e){
+  var html='<table><thead><tr><th>Data</th><th>Descripció</th><th>Empresa</th><th>Projecte</th><th>Categoria</th><th>Usuari</th><th style="text-align:right">Import</th><th>Estat</th><th>Assentament</th><th></th></tr></thead><tbody>';
+  listPag.forEach(function(e){
     var catCol=CAT_COLORS[e.categoria]||'#f3f2f1';
     var catTxt=CAT_TEXT[e.categoria]||'#323130';
     var catIcon=CAT_ICONS[e.categoria]||'ti-file';
@@ -389,6 +428,8 @@ function renderTaula(){
     html+='<tr>'
       +'<td style="color:#605e5c;white-space:nowrap">'+fmtDate(e.data)+'</td>'
       +'<td><strong>'+esc(e.descripcio||'—')+'</strong></td>'
+      +'<td>'+(e.empresa?'<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:2px;background:#f3f2f1">'+esc(e.empresa)+'</span>':'<span style="color:#a19f9d">—</span>')+'</td>'
+      +'<td style="font-size:12px;color:#605e5c">'+esc(e.projecte||'—')+'</td>'
       +'<td><span class="cat-icon" style="background:'+catCol+'"><i class="ti '+catIcon+'" style="font-size:11px;color:'+catTxt+'"></i></span>'+esc(e.categoria||'—')+'</td>'
       +'<td>'+esc(e.usuari||'—')+'</td>'
       +'<td class="import-cell">'+fmtEur(e.import)+'</td>'
@@ -408,6 +449,13 @@ function renderTaula(){
       +'</td></tr>';
   });
   html+='</tbody></table>';
+  if(totalPag>1){
+    html+='<div style="display:flex;align-items:center;justify-content:center;gap:4px;padding:10px;border-top:0.5px solid #edebe9">';
+    html+='<button onclick="canviPagina('+(paginaActual-1)+')" '+(paginaActual===1?'disabled style="opacity:.4"':'')+' style="padding:4px 10px;border:1px solid #8a8886;border-radius:2px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">‹</button>';
+    for(var p=1;p<=totalPag;p++){html+='<button onclick="canviPagina('+p+')" style="padding:4px 8px;border:1px solid '+(p===paginaActual?'#0078d4':'#8a8886')+';border-radius:2px;background:'+(p===paginaActual?'#0078d4':'#fff')+';color:'+(p===paginaActual?'#fff':'#323130')+';cursor:pointer;font-size:12px;font-family:inherit">'+p+'</button>';}
+    html+='<button onclick="canviPagina('+(paginaActual+1)+')" '+(paginaActual===totalPag?'disabled style="opacity:.4"':'')+' style="padding:4px 10px;border:1px solid #8a8886;border-radius:2px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit">›</button>';
+    html+='</div>';
+  }
   wrap.innerHTML=html;
 }
 
@@ -419,6 +467,7 @@ document.querySelectorAll('.tab').forEach(function(t){
     document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active');});
     t.classList.add('active');
     tabActual=t.dataset.tab;
+    paginaActual=1;
     renderTaula();
   });
 });
@@ -437,6 +486,8 @@ function veureDespesa(id){
   else if(e.estat==='Rebutjada')badge='<span class="badge b-rebutjada">Rebutjada</span>';
 
   var body='<div class="detall-field"><div class="detall-label">Usuari</div><div class="detall-value">'+esc(e.usuari)+'</div></div>'
+    +'<div class="detall-field"><div class="detall-label">Empresa</div><div class="detall-value">'+(e.empresa||'—')+'</div></div>'
+    +'<div class="detall-field"><div class="detall-label">Projecte</div><div class="detall-value">'+esc(e.projecte||'—')+'</div></div>'
     +'<div class="detall-field"><div class="detall-label">Data</div><div class="detall-value">'+fmtDate(e.data)+'</div></div>'
     +'<div class="detall-field"><div class="detall-label">Categoria</div><div class="detall-value"><span class="cat-icon" style="background:'+catCol+'"><i class="ti '+catIcon+'" style="font-size:11px;color:'+catTxt+'"></i></span>'+esc(e.categoria)+'</div></div>'
     +'<div class="detall-field"><div class="detall-label">Descripció</div><div class="detall-value">'+esc(e.descripcio||'—')+'</div></div>'
@@ -556,6 +607,8 @@ function openModal(id){
     document.getElementById('fDescripcio').value=e.descripcio||'';
     document.getElementById('fAssentament').value=e.assentament||'';
     document.getElementById('grupAssentament').style.display='block';
+    document.getElementById('fEmpresa').value=e.empresa||'';
+    document.getElementById('fProjecte').value=e.projecte||'';
   } else {
     document.getElementById('modalTitle').textContent='Nova despesa';
     document.getElementById('fUsuari').value='';
@@ -592,10 +645,14 @@ document.getElementById('btnDesar').onclick=function(){
 
   function desar(tiquetUrl){
     var assentament=document.getElementById('fAssentament').value.trim();
-    var payload={usuari:usuari,data:data,categoria:categoria,import:importVal,descripcio:descripcio,estat:editId?undefined:'Pendent',ticket_url:tiquetUrl||undefined,assentament:assentament||undefined};
+    var empresa=document.getElementById('fEmpresa').value;
+    var projecte=document.getElementById('fProjecte').value.trim();
+    var payload={usuari:usuari,data:data,categoria:categoria,import:importVal,descripcio:descripcio,estat:editId?undefined:'Pendent',ticket_url:tiquetUrl||undefined,assentament:assentament||undefined,empresa:empresa||undefined,projecte:projecte||undefined};
     if(!payload.ticket_url)delete payload.ticket_url;
     if(!payload.estat)delete payload.estat;
     if(!payload.assentament)delete payload.assentament;
+    if(!payload.empresa)delete payload.empresa;
+    if(!payload.projecte)delete payload.projecte;
     var promise=editId?sbUpdate(parseInt(editId),payload):sbInsert(payload);
     promise.then(function(res){
       var msg=editId?'Despesa actualitzada':'Despesa desada correctament';
